@@ -6,7 +6,7 @@ import os, random, sys, time, urlparse
 from selenium import webdriver
 from bs4 import BeautifulSoup
 from random import shuffle
-from summarization import summarize_text  # Import the summarization module
+from summarization import fetch_initial_comment, refine_comment_with_groq, refine_comment_further  # Import the summarization module
 
 # Configure constants here
 EMAIL = 'youremail@gmail.com'
@@ -18,7 +18,6 @@ RANDOMIZE_LIKING_POSTS = True
 MAX_LIKES_ON_POST = 50
 COMMENT_ON_POSTS = True  # Enable commenting
 RANDOMIZE_COMMENTING_ON_POSTS = True
-COMMENTS = ['Great read!', 'Good work keep it up!', 'Really enjoyed the content!', 'Very interesting!']
 ARTICLE_BLACK_LIST = ['Sex', 'Drugs', 'Child Labor']
 FOLLOW_USERS = False
 RANDOMIZE_FOLLOWING_USERS = True
@@ -415,15 +414,17 @@ def CommentOnArticle(browser):
             # Extract article content for summarization
             post_content = extract_post_content(browser)
             try:
-                summary = summarize_text(post_content)
-                print(f"Summary: {summary}")
+                summary = fetch_initial_comment()
+                refined_summary = refine_comment_with_groq(summary)
+                final_summary = refine_comment_further(refined_summary)
+                print(f"Summary: {final_summary}")
 
                 if VERBOSE:
-                    print 'Commenting \"'+summary+'\" on the article : \"'+browser.title+'\"'
+                    print 'Commenting \"'+final_summary+'\" on the article : \"'+browser.title+'\"'
                 commentButton = browser.find_element_by_xpath('//button[@data-action="respond"]')
                 commentButton.click()
                 time.sleep(5)
-                browser.find_element_by_xpath('//div[@role="textbox"]').send_keys(summary)
+                browser.find_element_by_xpath('//div[@role="textbox"]').send_keys(final_summary)
                 time.sleep(20)
                 browser.find_element_by_xpath('//button[@data-action="publish"]').click()
                 time.sleep(5)
@@ -444,64 +445,9 @@ def extract_post_content(browser):
     try:
         post_content = browser.find_element_by_xpath('//article').text
         return post_content
-    except:
+    except Exception as e:
         if VERBOSE:
-            print 'Exception thrown when trying to extract post content.'
+            print(f'Exception thrown when trying to extract post content: {e}')
         return ""
 
-def FollowUser(browser):
-    """
-    Follow the user whose article you have already currently navigated to.
-    browser: selenium webdriver used to interact with the browser.
-    """
-    try:
-        print 'Following the user: '+browser.find_element_by_xpath('//a[@rel="author cc:attributionUrl"]').text
-        print ''
-        browser.find_element_by_xpath('//button[@data-action="toggle-subscribe-user"]').click()
-    except:
-        if VERBOSE:
-            print 'Exception thrown when trying to follow the user.'
-        pass
 
-def UnFollowUser(browser):
-    """
-    UnFollow a just from your followed user list.
-    browser: selenium webdriver used to interact with the browser.
-    Note: view the black list of users you do not want to unfollow.
-    """
-    browser.get('https://medium.com/')
-
-    try:
-        browser.find_element_by_xpath('//div[@class="avatar"]/img').click()
-        time.sleep(3)
-        profileUrl = browser.find_element_by_xpath('//a[contains(text(),"Profile")]').get_attribute("href")+'/following'
-        browser.get(profileUrl)
-        time.sleep(3)
-        followedUsers = browser.find_elements_by_xpath('//a[@data-action="show-user-card"]')
-        random.shuffle(followedUsers)
-
-        for followedUser in followedUsers:
-            followedUserUrl = followedUser.get_attribute("href")
-            if not any(blackListUser in followedUserUrl for blackListUser in UNFOLLOW_USERS_BLACK_LIST):
-                browser.get(followedUserUrl)
-                break
-
-        time.sleep(3)
-        print 'UnFollow the user: '+browser.find_element_by_xpath('//h1[@class="hero-title"]').text
-        print ''
-        browser.find_element_by_xpath('//button[@data-action="toggle-subscribe-user"]').click()
-    except:
-        if VERBOSE:
-            print 'Exception thrown when trying to unfollow a user.'
-        pass
-
-def ScrollToBottomAndWaitForLoad(browser):
-    """
-    Scroll to the bottom of the page and wait for the page to perform its lazy loading.
-    browser: selenium webdriver used to interact with the browser.
-    """
-    browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(4)
-
-if __name__ == '__main__':
-    Launch()
