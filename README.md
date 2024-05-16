@@ -1,7 +1,7 @@
 #Difference between MediumBot and MediumBotGPT? 
 Proposed Upgrades 
 - Comments should be generated through a structured GPT prompt.
-- The GPT Structured prompt will read the Medium Article (by Copying it) and implementing the following preexisting AHK script: 
+- The GPT Structured prompt will read the Medium Article (by Copying it) and implementing the following preexisting python script: 
 
 https://github.com/nerdsaver/Groq_comment-creator
 
