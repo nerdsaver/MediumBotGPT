@@ -9,6 +9,7 @@ import numpy as np
 import csv
 from pyppeteer import launch
 from PIL import Image
+from PIL import ImageGrab
 from io import BytesIO
 
 # Logging Configuration
@@ -27,10 +28,10 @@ TAGS = config['TAGS']
 
 # Setting the Path for Chromium and Template Images
 CHROMIUM_PATH = r'chrome\win64-125.0.6422.60\chrome-win64\chrome.exe'
-CLAP_BUTTON_TEMPLATE_PATH = 'clap_button_template.png'
-BLACK_CLAP_BUTTON_TEMPLATE_PATH = 'black_clap_button_template.png'
-FOLLOW_BUTTON_TEMPLATE_BLACK_PATH = 'follow_button_template_black.png'
-FOLLOW_BUTTON_TEMPLATE_WHITE_PATH = 'follow_button_template_white.png'
+CLAP_BUTTON_TEMPLATE_PATH = r'buttontemps\clap_button_template.png'
+BLACK_CLAP_BUTTON_TEMPLATE_PATH = r'buttontemps\black_clap_button_template.png'
+FOLLOW_BUTTON_TEMPLATE_BLACK_PATH = r'buttontemps\follow_button_template_black.png'
+FOLLOW_BUTTON_TEMPLATE_WHITE_PATH = r'buttontemps\follow_button_template_white.png'
 
 # Loading and Saving Visited URLs
 def load_visited_urls():
@@ -78,24 +79,14 @@ def fetch_rss_article_links(tag, articleURLsVisited):
     return article_urls
 
 # Taking a Screenshot
-async def take_screenshot(page):
-    """Takes a screenshot of the current page."""
-    screenshot = await page.screenshot(fullPage=True)
-    return np.array(Image.open(BytesIO(screenshot)))
-
-# Finding the Clap Button
-def find_clap_button(image, template_path, threshold=0.51):
-    """Uses template matching to find the clap button in the image."""
-    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
-    result = cv2.matchTemplate(gray_image, template, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-    logging.info(f"Template matching value for {template_path}: {max_val}")
-
-    if max_val >= threshold:
-        return max_loc
-    return None
+async def take_screenshot(page=None):
+    """Takes a screenshot of the current page or the entire screen if page is None."""
+    if page is None:
+        screenshot = ImageGrab.grab()
+        return cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGR2GRAY)
+    else:
+        screenshot = await page.screenshot(fullPage=True)
+        return np.array(Image.open(BytesIO(screenshot)))
 
 # Finding the Follow Button
 def find_follow_button(image, template_paths, threshold=0.6):
@@ -113,11 +104,24 @@ def find_follow_button(image, template_paths, threshold=0.6):
     return None
 
 # Clapping on an Article
+def find_clap_button(image, template_path):
+    """Uses template matching to find the clap button in the image."""
+    template = cv2.imread(template_path, 0)
+    result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+    
+    logging.info(f"Template matching value for {template_path}: {max_val}")
+    
+    threshold = 0.51  # Adjusted threshold
+    if max_val >= threshold:
+        return max_loc
+    return None
+
 async def clap_article(page):
     try:
         for attempt in range(5):  # Try up to 5 times
-            screenshot = await take_screenshot(page)
-            
+            screenshot = await take_screenshot()
+
             black_clap_button_location = find_clap_button(screenshot, BLACK_CLAP_BUTTON_TEMPLATE_PATH)
             if black_clap_button_location:
                 logging.info("Black clap button found, waiting and clapping once, then skipping to next article.")
