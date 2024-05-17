@@ -175,8 +175,15 @@ async def click_follow_button(page, location):
     h, w = template.shape
     center_x = location[0] + w // 2
     center_y = location[1] + h // 2
-    await page.mouse.click(center_x, center_y)
-    logging.info(f"Clicked Follow button at coordinates: ({center_x}, {center_y})")
+    viewport_size = await page.evaluate('({ width: window.innerWidth, height: window.innerHeight })')
+    logging.info(f"Viewport size: {viewport_size}")
+
+    # Ensure the button is within the viewport
+    if 0 <= center_x <= viewport_size['width'] and 0 <= center_y <= viewport_size['height']:
+        await page.mouse.click(center_x, center_y)
+        logging.info(f"Clicked Follow button at coordinates: ({center_x}, {center_y})")
+    else:
+        logging.info("Follow button is not within the viewport.")
 
 # Reading and Clapping Articles
 async def read_and_clap_article(browser, url, visited_urls):
