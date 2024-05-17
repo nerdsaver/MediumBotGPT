@@ -11,12 +11,12 @@ from pyppeteer import launch
 from PIL import Image
 from io import BytesIO
 
-# Configure logging
+# Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Load configuration from file
+# Loading Configuration
 CONFIG_FILE_PATH = 'config.json'
-VISITED_URLS_FILE_PATH = 'visited_urls.csv'  # File path for storing visited URLs
+VISITED_URLS_FILE_PATH = 'visited_urls.csv'
 
 with open(CONFIG_FILE_PATH, 'r') as config_file:
     config = json.load(config_file)
@@ -25,13 +25,14 @@ EMAIL = config['EMAIL']
 PASSWORD = config['PASSWORD']
 TAGS = config['TAGS']
 
-# Set the path to the manually downloaded Chromium binary
-CHROMIUM_PATH = r'chrome\win64-125.0.6422.60\chrome-win64\chrome.exe'  # Update this path to where you installed Chromium
-
-# Path to the clap button template images
+# Setting the Path for Chromium and Template Images
+CHROMIUM_PATH = r'chrome\win64-125.0.6422.60\chrome-win64\chrome.exe'
 CLAP_BUTTON_TEMPLATE_PATH = 'clap_button_template.png'
 BLACK_CLAP_BUTTON_TEMPLATE_PATH = 'black_clap_button_template.png'
+FOLLOW_BUTTON_TEMPLATE_BLACK_PATH = 'follow_button_template_black.png'
+FOLLOW_BUTTON_TEMPLATE_WHITE_PATH = 'follow_button_template_white.png'
 
+# Loading and Saving Visited URLs
 def load_visited_urls():
     """Load visited URLs from a CSV file."""
     visited_urls = set()
@@ -57,9 +58,10 @@ def save_visited_urls(visited_urls):
         logging.error(f"Error saving visited URLs to {VISITED_URLS_FILE_PATH}: {e}")
         print(f"Error saving visited URLs to {VISITED_URLS_FILE_PATH}: {e}")
 
+# Fetching RSS Article Links
 def fetch_rss_article_links(tag, articleURLsVisited):
     logging.info(f'Fetching articles for tag: {tag}')
-    feed_url = f'https://medium.com/feed/tag/{tag.replace(" ", "-").lower()}'  # Convert spaces to hyphens and to lower case
+    feed_url = f'https://medium.com/feed/tag/{tag.replace(" ", "-").lower()}'
     feed = feedparser.parse(feed_url)
     article_urls = []
 
@@ -75,11 +77,13 @@ def fetch_rss_article_links(tag, articleURLsVisited):
 
     return article_urls
 
+# Taking a Screenshot
 async def take_screenshot(page):
     """Takes a screenshot of the current page."""
     screenshot = await page.screenshot(fullPage=True)
     return np.array(Image.open(BytesIO(screenshot)))
 
+# Finding the Clap Button
 def find_clap_button(image, template_path, threshold=0.51):
     """Uses template matching to find the clap button in the image."""
     template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
@@ -93,70 +97,128 @@ def find_clap_button(image, template_path, threshold=0.51):
         return max_loc
     return None
 
+# Finding the Follow Button
+def find_follow_button(image, template_paths, threshold=0.6):
+    """Uses template matching to find the follow button in the image."""
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    for template_path in template_paths:
+        template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+        result = cv2.matchTemplate(gray_image, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+        logging.info(f"Template matching value for {template_path}: {max_val}")
+
+        if max_val >= threshold:
+            return max_loc
+    return None
+
+# Clapping on an Article
 async def clap_article(page):
     try:
         for attempt in range(5):  # Try up to 5 times
             screenshot = await take_screenshot(page)
             
-            # Check for black clap button first
             black_clap_button_location = find_clap_button(screenshot, BLACK_CLAP_BUTTON_TEMPLATE_PATH)
             if black_clap_button_location:
                 logging.info("Black clap button found, waiting and clapping once, then skipping to next article.")
-                await asyncio.sleep(random.uniform(3, 5))  # Wait between 3 and 5 seconds
+                await asyncio.sleep(random.uniform(3, 5))
                 template = cv2.imread(BLACK_CLAP_BUTTON_TEMPLATE_PATH, 0)
                 h, w = template.shape
                 center_x = black_clap_button_location[0] + w // 2
                 center_y = black_clap_button_location[1] + h // 2
                 await page.mouse.click(center_x, center_y)
-                await asyncio.sleep(5)  # Wait for 5 seconds before moving to the next article
+                await asyncio.sleep(5)
                 return
 
-            # If black clap button is not found, look for the regular clap button
             clap_button_location = find_clap_button(screenshot, CLAP_BUTTON_TEMPLATE_PATH)
             if clap_button_location:
                 logging.info("Clap button found.")
-                # Calculate the center of the clap button
                 template = cv2.imread(CLAP_BUTTON_TEMPLATE_PATH, 0)
                 h, w = template.shape
                 center_x = clap_button_location[0] + w // 2
                 center_y = clap_button_location[1] + h // 2
 
-                # Click the clap button between 11 and 22 times
                 times_to_clap = random.randint(11, 22)
                 for _ in range(times_to_clap):
                     await page.mouse.click(center_x, center_y)
-                    await asyncio.sleep(random.uniform(0.1, 0.3))  # Random delay between clicks
+                    await asyncio.sleep(random.uniform(0.1, 0.3))
                 logging.info(f'Clapped {times_to_clap} times')
                 return
             else:
                 logging.info('Clap button not found, scrolling and retrying...')
-                # Scroll down slightly
                 await page.evaluate('window.scrollBy(0, window.innerHeight / 2)')
-                await asyncio.sleep(2)  # Wait for 2 seconds before retrying
+                await asyncio.sleep(2)
         logging.info('Failed to find the clap button after 5 attempts.')
     except Exception as e:
         logging.error(f'Error while clapping: {e}')
 
+# Detecting the Follow Button using Template Matching
+async def detect_follow_button(page):
+    screenshot = await take_screenshot(page)
+    follow_button_location = find_follow_button(screenshot, [FOLLOW_BUTTON_TEMPLATE_BLACK_PATH, FOLLOW_BUTTON_TEMPLATE_WHITE_PATH])
+    return follow_button_location
+
+# Detecting the Follow Button using CSS Selector
+async def detect_follow_button_css(page):
+    try:
+        await page.waitForSelector('button.follow', timeout=5000)
+        logging.info("Follow button found using CSS selector.")
+        return True
+    except Exception as e:
+        logging.info("Follow button not found using CSS selector.")
+        return False
+
+# Clicking the Follow Button
+async def click_follow_button(page, location):
+    """Simulates a click on the detected 'Follow' button."""
+    template = cv2.imread(FOLLOW_BUTTON_TEMPLATE_BLACK_PATH, cv2.IMREAD_GRAYSCALE)
+    h, w = template.shape
+    center_x = location[0] + w // 2
+    center_y = location[1] + h // 2
+    await page.mouse.click(center_x, center_y)
+    logging.info(f"Clicked Follow button at coordinates: ({center_x}, {center_y})")
+
+# Reading and Clapping Articles
 async def read_and_clap_article(browser, url, visited_urls):
     page = await browser.newPage()
     await page.goto(url)
     
-    # Wait for a few seconds to ensure the page has fully loaded
-    await asyncio.sleep(random.uniform(3, 5))  # Adjust the delay as needed
+    await asyncio.sleep(random.uniform(3, 5))
 
-    # Scroll down the article
     await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-    await asyncio.sleep(45)  # Spend 45 seconds on the page
+    await asyncio.sleep(45)
 
-    # Find and click the clap button
     await clap_article(page)
     await page.close()
 
-    # Add the URL to the visited list and save immediately
     visited_urls.add(url)
     save_visited_urls(visited_urls)
     logging.info(f'Visited and clapped article: {url}')
 
+# Reading and Following Articles
+async def read_and_follow_article(browser, url, visited_urls):
+    page = await browser.newPage()
+    await page.goto(url)
+    await asyncio.sleep(random.uniform(5, 15))  # Add delay of 5-15 seconds before finding and clicking 'Follow'
+    
+    follow_button_location = await detect_follow_button(page)
+    if follow_button_location:
+        await click_follow_button(page, follow_button_location)
+    else:
+        logging.info("Follow button not found using template matching.")
+
+    css_detected = await detect_follow_button_css(page)
+    if css_detected:
+        logging.info("Follow button found and clicked using CSS selector.")
+    else:
+        logging.info("Follow button not found using CSS selector.")
+    
+    await page.close()
+    visited_urls.add(url)
+    save_visited_urls(visited_urls)
+    logging.info(f'Visited and followed article: {url}')
+
+# Logging into Medium via Facebook
 async def login_to_medium(page):
     facebook_login_url = (
         "https://www.facebook.com/login.php?skip_api_login=1&api_key=542599432471018&kid_directed_site=0&app_id=542599432471018"
@@ -177,8 +239,9 @@ async def login_to_medium(page):
     await page.waitForNavigation()
     logging.info('Logged in successfully.')
 
+# Main Function
 async def main():
-    browser = await launch(headless=False, executablePath=CHROMIUM_PATH)  # Use the specified Chromium path
+    browser = await launch(headless=False, executablePath=CHROMIUM_PATH)
     page = await browser.newPage()
     
     await login_to_medium(page)
@@ -194,10 +257,11 @@ async def main():
             articleURL = articleURLsQueued.pop()
             if articleURL not in visited_urls:
                 await read_and_clap_article(browser, articleURL, visited_urls)
+                await read_and_follow_article(browser, articleURL, visited_urls)
 
     await browser.close()
 
-# Handle event loop issue in Windows
+# Handling Event Loop in Windows
 if __name__ == '__main__':
     try:
         asyncio.run(main())
