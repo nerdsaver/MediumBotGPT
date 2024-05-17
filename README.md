@@ -1,3 +1,5 @@
+Current State as of last update: Update to use OCR for the clapping functionality. WIll add other features slowly. For now all it does is save the articles you've visited, checks against that so you don't visit them again and claps on those it can clap on! 
+
 #Difference between MediumBot and MediumBotGPT? 
 Proposed Upgrades 
 - Comments should be generated through a structured GPT prompt.
