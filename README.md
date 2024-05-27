@@ -12,7 +12,7 @@ https://github.com/nerdsaver/Groq_comment-creator
 
 Added Reader Script (not implemented yet) - this is in the 'Reader' Folder.
 
-# Readme
+# Readme for Reader Script
 
 1. ### **Medium Reader Bot Script**
 
